@@ -6,6 +6,15 @@ from attention import AttentionConv, AttentionStem
 
 
 class Bottleneck(nn.Module):
+    
+    ## 처음 인풋 채널보다 4배 확장 하겠다.
+    # 1. cnn 통과후  torch.Size([32, 64, 32, 32])
+    # 2. 어텐션 통과후  torch.Size([32, 64, 32, 32])
+    # 3.cnn 통과후  torch.Size([32, 256, 32, 32])
+    # 숏컷 연산후 torch.Size([32, 256, 32, 32])
+    
+    # 당연히 보틀넥구조는 입구에서 줄였다가 채널수를 크게 키우는 구조이기 때문이다.
+    
     expansion = 4
 
     def __init__(self, in_channels, out_channels, stride=1, groups=1, base_width=64):
@@ -28,6 +37,8 @@ class Bottleneck(nn.Module):
             nn.BatchNorm2d(self.expansion * out_channels),
         )
 
+        
+        ## 레즈넷 스킵커넥션 층, 단순 덧셈
         self.shortcut = nn.Sequential()
         if stride != 1 or in_channels != self.expansion * out_channels:
             self.shortcut = nn.Sequential(
@@ -36,13 +47,24 @@ class Bottleneck(nn.Module):
             )
 
     def forward(self, x):
+        
+        
         out = self.conv1(x)
+        # print("1. cnn 통과후 ",out.shape)
+        
         out = self.conv2(out)
+        # print("2. 어텐션 통과후 ",out.shape)
+        
         out = self.conv3(out)
+        # print("3.cnn 통과후 ",out.shape)
+        
+        ## 스트라이더가 2라면 평균 풀링하고
         if self.stride >= 2:
             out = F.avg_pool2d(out, (self.stride, self.stride))
 
         out += self.shortcut(x)
+        # print("숏컷 연산후",out.shape)
+        
         out = F.relu(out)
 
         return out
@@ -55,31 +77,19 @@ class Model(nn.Module):
 
         if stem:
             self.init = nn.Sequential(
-                # CIFAR10
                 AttentionStem(in_channels=3, out_channels=64, kernel_size=4, stride=1, padding=2, groups=1),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
-
-                # For ImageNet
-                # AttentionStem(in_channels=3, out_channels=64, kernel_size=4, stride=1, padding=2, groups=1),
-                # nn.BatchNorm2d(64),
-                # nn.ReLU(),
-                # nn.MaxPool2d(4, 4)
             )
         else:
             self.init = nn.Sequential(
-                # CIFAR10
                 nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
                 nn.BatchNorm2d(64),
                 nn.ReLU(),
-
-                # For ImageNet
-                # nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False),
-                # nn.BatchNorm2d(64),
-                # nn.ReLU(),
-                # nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             )
 
+
+        
         self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
